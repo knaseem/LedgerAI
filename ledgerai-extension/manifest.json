@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "LedgerAI Copilot",
+  "version": "1.0.0",
+  "description": "LedgerAI browser extension to connect to your ERP (NetSuite, QuickBooks, etc) via the piggyback approach.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "LedgerAI Copilot",
+    "default_icon": "icon.png"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.netsuite.com/*", "*://*.qbo.intuit.com/*", "*://*.xero.com/*", "http://localhost:*/*", "<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}

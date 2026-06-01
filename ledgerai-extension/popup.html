@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>LedgerAI Copilot</title>
+    <style>
+      body { width: 320px; padding: 20px; font-family: system-ui, -apple-system, sans-serif; background: #050508; color: #fff; margin: 0; }
+      h1 { font-size: 18px; margin: 0 0 8px 0; color: #6366f1; display: flex; align-items: center; gap: 8px; }
+      p { font-size: 13px; color: #94a3b8; margin: 0 0 20px 0; line-height: 1.4; }
+      button { background: #6366f1; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; transition: background 0.2s; }
+      button:hover { background: #4f46e5; }
+      .status { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); color: #94a3b8; }
+      .dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px rgba(16,185,129,0.5); }
+    </style>
+  </head>
+  <body>
+    <h1>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      LedgerAI Copilot
+    </h1>
+    <p>Piggybacking on your active browser session to automate AP/AR workflows directly inside your ERP.</p>
+    <button id="extractBtn">Extract Current Invoice</button>
+    <div class="status">
+      <div class="dot"></div>
+      Connected to LedgerAI Dashboard
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
