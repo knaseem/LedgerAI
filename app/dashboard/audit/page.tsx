@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ClipboardList,
@@ -13,9 +13,12 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
+  Lock,
 } from 'lucide-react';
 import { useAuditStore } from '@/lib/store';
 import type { AuditEntry } from '@/lib/mockData';
+import { buildHashChain, verifyChain, truncateHash, generateChainReport, type HashedAuditEntry, type ChainVerificationResult } from '@/lib/auditChain';
+import AuditReasoningTree from '@/components/AuditReasoningTree';
 
 // ── Result Icon ──────────────────────────────────────────────────
 function ResultIcon({ result }: { result: AuditEntry['result'] }) {
@@ -36,7 +39,7 @@ const resultPill: Record<string, string> = {
 };
 
 // ── Expandable Row ───────────────────────────────────────────────
-function AuditRow({ entry, delay }: { entry: AuditEntry; delay: number }) {
+function AuditRow({ entry, delay }: { entry: HashedAuditEntry; delay: number }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -85,17 +88,46 @@ function AuditRow({ entry, delay }: { entry: AuditEntry; delay: number }) {
             transition={{ duration: 0.2 }}
             className="border-t border-border"
           >
-            <div className="px-5 py-4 ml-8">
-              <div className="glass-flat p-4 border-l-2 border-accent">
-                <p className="text-[10px] uppercase tracking-wider text-accent mb-2">Full Reasoning Trace</p>
-                <p className="text-sm text-text-secondary leading-relaxed font-mono whitespace-pre-wrap">
-                  {entry.reasoning}
-                </p>
+            <div className="px-5 py-5 ml-8 space-y-5">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <div className="lg:col-span-2 glass-flat p-4 border-l-2 border-accent flex flex-col justify-between">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-accent font-bold mb-2">Raw reasoning transcript</p>
+                    <p className="text-xs text-text-secondary leading-relaxed font-mono whitespace-pre-wrap">
+                      {entry.reasoning}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4 mt-4 text-[10px] text-text-muted">
+                    <span>Workflow: <span className="text-text-secondary font-medium">{entry.workflow}</span></span>
+                    <span>System: <span className="text-text-secondary font-mono">{entry.system}</span></span>
+                    <span>ID: <span className="text-text-secondary font-mono">{entry.id}</span></span>
+                  </div>
+                </div>
+
+                <div className="glass-flat p-4 border-l-2 border-success flex flex-col justify-between">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-success font-bold mb-2">Cryptographic Ledger Info</p>
+                    <div className="space-y-2 text-[10px] font-mono text-text-secondary">
+                      <div>
+                        <p className="text-text-muted text-[9px] uppercase">Record Hash</p>
+                        <p className="truncate text-text-primary" title={entry.hash}>{entry.hash || 'Not computed'}</p>
+                      </div>
+                      <div>
+                        <p className="text-text-muted text-[9px] uppercase">Previous Block Hash</p>
+                        <p className="truncate text-text-primary" title={entry.previousHash}>{entry.previousHash || 'Genesis Block'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-4 text-[10px] text-success font-semibold">
+                    <Lock className="w-3.5 h-3.5" />
+                    Block Verified in Audit Chain
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-4 mt-3 text-xs text-text-muted">
-                <span>Workflow: <span className="text-text-secondary">{entry.workflow}</span></span>
-                <span>System: <span className="text-text-secondary font-mono">{entry.system}</span></span>
-                <span>ID: <span className="text-text-secondary font-mono">{entry.id}</span></span>
+
+              {/* AI Explainability Decision Tree */}
+              <div className="pt-2 border-t border-border/30">
+                <AuditReasoningTree entry={entry} />
               </div>
             </div>
           </motion.div>
@@ -112,6 +144,15 @@ export default function AuditLogPage() {
   const [workflowFilter, setWorkflowFilter] = useState('all');
   const [resultFilter, setResultFilter] = useState('all');
   const [visibleCount, setVisibleCount] = useState(20);
+  const [chainValid, setChainValid] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (entries.length > 0) {
+      verifyChain(entries).then((res) => {
+        setChainValid(res.isValid);
+      });
+    }
+  }, [entries]);
 
   const workflows = ['all', ...Array.from(new Set(entries.map((e) => e.workflow)))];
 
@@ -145,17 +186,45 @@ export default function AuditLogPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportChainReport = async () => {
+    const chain = await buildHashChain(entries);
+    const report = generateChainReport(chain);
+    const blob = new Blob([report], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ledgerai-hash-chain-${new Date().toISOString().split('T')[0]}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Audit Log</h1>
-          <p className="text-sm text-text-muted mt-1">Complete audit trail with AI reasoning traces.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">Audit Log</h1>
+            {chainValid !== null && (
+              <span className={`pill text-[10px] font-semibold flex items-center gap-1.5 ${
+                chainValid ? 'pill-success animate-pulse' : 'pill-error'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${chainValid ? 'bg-success' : 'bg-error animate-ping'}`} />
+                {chainValid ? 'Chain Verified ✓' : 'Chain Tampered ✗'}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-text-muted mt-1">Complete audit trail with cryptographically chained blocks and AI decision trees.</p>
         </div>
-        <button onClick={handleExport} className="btn-ghost">
-          <Download className="w-4 h-4" />
-          Download Report
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleExport} className="btn-ghost btn-sm">
+            <Download className="w-3.5 h-3.5" />
+            Download Log
+          </button>
+          <button onClick={handleExportChainReport} className="btn-ghost btn-sm">
+            <Download className="w-3.5 h-3.5" />
+            Chain Report
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

@@ -1,5 +1,64 @@
 import { create } from 'zustand';
 import { Invoice, Workflow, AuditEntry, invoices as mockInvoices, workflows as mockWorkflows, auditLog as mockAuditLog, recentActivity as mockActivity, ActivityItem, ReconciliationMatch, reconciliationMatches as mockMatches, CloseTask, closeTasks } from './mockData';
+import { Role, TeamMember, mockTeam } from './rbac';
+import { ApprovalStep, Signature, getApprovalRoute, generateSignatureHash } from './approvalEngine';
+import { buildHashChain, HashedAuditEntry, computeEntryHash } from './auditChain';
+
+// ── Session / Simulator Store ─────────────────────────────────────
+interface SessionStore {
+  currentUser: TeamMember;
+  setCurrentUser: (user: TeamMember) => void;
+}
+
+export const useSessionStore = create<SessionStore>((set) => ({
+  currentUser: mockTeam[0], // Khalid Naseem (Owner) by default
+  setCurrentUser: (user) => set({ currentUser: user }),
+}));
+
+// Helper to initialize mock invoices with approval steps & signatures
+function initializeMockInvoices(): Invoice[] {
+  return mockInvoices.map((inv) => {
+    const route = getApprovalRoute(inv.amount);
+    const signatures: Signature[] = [];
+    
+    if (inv.status === 'approved' || inv.status === 'matched') {
+      // Programmatically sign all steps in the route
+      route.forEach((step, index) => {
+        let signer = mockTeam.find(t => t.role === step.role);
+        if (!signer) signer = mockTeam[0]; // fallback
+        
+        const timestamp = inv.date + ' 14:00';
+        const hash = generateSignatureHash(inv.id, signer.id, timestamp);
+        
+        const signature: Signature = {
+          userId: signer.id,
+          userName: signer.name,
+          role: signer.role,
+          timestamp,
+          ip: `192.168.1.${10 + index}`,
+          hash,
+          comment: 'Approved automatically via policy matching.'
+        };
+        
+        step.status = 'completed';
+        step.signature = signature;
+        signatures.push(signature);
+      });
+    } else if (inv.status === 'exception' || inv.status === 'pending') {
+      // If amount is less than 1000, it's auto-approved, otherwise set route
+      if (inv.amount >= 1000) {
+        // Leave route steps as pending
+      }
+    }
+    
+    return {
+      ...inv,
+      uploaderId: inv.id === 'INV-2026-004' ? 'USR-005' : 'USR-001', // David Park uploaded exception, Khalid uploaded others
+      approvalRoute: route,
+      signatures
+    };
+  });
+}
 
 // ── Invoice Store ────────────────────────────────────────────────
 interface InvoiceStore {
@@ -10,24 +69,101 @@ interface InvoiceStore {
   setDrawerOpen: (open: boolean) => void;
   updateInvoiceStatus: (id: string, status: Invoice['status']) => void;
   addInvoice: (invoice: Invoice) => void;
+  signInvoice: (invoiceId: string, user: TeamMember, comment?: string) => void;
 }
 
 export const useInvoiceStore = create<InvoiceStore>((set) => ({
-  invoices: mockInvoices,
+  invoices: initializeMockInvoices(),
   selectedInvoice: null,
   drawerOpen: false,
   setSelectedInvoice: (invoice) => set({ selectedInvoice: invoice }),
   setDrawerOpen: (open) => set({ drawerOpen: open }),
   updateInvoiceStatus: (id, status) =>
-    set((state) => ({
-      invoices: state.invoices.map((inv) =>
-        inv.id === id ? { ...inv, status } : inv
-      ),
-    })),
+    set((state) => {
+      let updatedSelectedInvoice = state.selectedInvoice;
+      const newInvoices = state.invoices.map((inv) => {
+        if (inv.id !== id) return inv;
+        const updated = { ...inv, status };
+        if (state.selectedInvoice?.id === id) {
+          updatedSelectedInvoice = updated;
+        }
+        return updated;
+      });
+      return {
+        invoices: newInvoices,
+        selectedInvoice: updatedSelectedInvoice
+      };
+    }),
   addInvoice: (invoice) =>
-    set((state) => ({
-      invoices: [invoice, ...state.invoices],
-    })),
+    set((state) => {
+      // Add default approval route for newly uploaded invoices
+      const route = getApprovalRoute(invoice.amount);
+      const invoiceWithRoute: Invoice = {
+        ...invoice,
+        uploaderId: 'USR-005', // Default simulated upload from David Park (Analyst)
+        approvalRoute: route,
+        signatures: []
+      };
+      return {
+        invoices: [invoiceWithRoute, ...state.invoices],
+      };
+    }),
+  signInvoice: (invoiceId, user, comment) =>
+    set((state) => {
+      let updatedSelectedInvoice = state.selectedInvoice;
+      
+      const newInvoices = state.invoices.map((inv) => {
+        if (inv.id !== invoiceId) return inv;
+        
+        const steps = inv.approvalRoute ? inv.approvalRoute.map(s => ({ ...s })) : [];
+        const signatures = inv.signatures ? [...inv.signatures] : [];
+        
+        const nextStepIndex = steps.findIndex(s => s.status === 'pending');
+        if (nextStepIndex === -1) return inv;
+        
+        const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 16);
+        const signatureHash = generateSignatureHash(inv.id, user.id, timestamp);
+        
+        const signature: Signature = {
+          userId: user.id,
+          userName: user.name,
+          role: user.role,
+          timestamp,
+          ip: '192.168.1.42',
+          hash: signatureHash,
+          comment: comment || 'Approved sign-off'
+        };
+        
+        steps[nextStepIndex] = {
+          ...steps[nextStepIndex],
+          status: 'completed',
+          signature
+        };
+        
+        signatures.push(signature);
+        
+        const allCompleted = steps.every(s => s.status === 'completed');
+        const newStatus = allCompleted ? 'approved' : inv.status;
+        
+        const updatedInvoice = {
+          ...inv,
+          approvalRoute: steps,
+          signatures,
+          status: newStatus as Invoice['status']
+        };
+        
+        if (state.selectedInvoice?.id === invoiceId) {
+          updatedSelectedInvoice = updatedInvoice;
+        }
+        
+        return updatedInvoice;
+      });
+      
+      return {
+        invoices: newInvoices,
+        selectedInvoice: updatedSelectedInvoice
+      };
+    }),
 }));
 
 // ── Workflow Store ────────────────────────────────────────────────
@@ -48,17 +184,48 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
 
 // ── Audit Store ──────────────────────────────────────────────────
 interface AuditStore {
-  entries: AuditEntry[];
-  addEntry: (entry: AuditEntry) => void;
+  entries: HashedAuditEntry[];
+  isChainInitialized: boolean;
+  initializeChain: () => Promise<void>;
+  addEntry: (entry: Omit<AuditEntry, 'id'>) => Promise<void>;
 }
 
-export const useAuditStore = create<AuditStore>((set) => ({
-  entries: mockAuditLog,
-  addEntry: (entry) =>
-    set((state) => ({
-      entries: [entry, ...state.entries],
-    })),
-}));
+export const useAuditStore = create<AuditStore>((set, get) => {
+  // Asynchronously compute hash chain for mock audit log at startup
+  buildHashChain(mockAuditLog).then((hashed) => {
+    set({ entries: hashed, isChainInitialized: true });
+  });
+
+  return {
+    entries: [],
+    isChainInitialized: false,
+    initializeChain: async () => {
+      const hashed = await buildHashChain(mockAuditLog);
+      set({ entries: hashed, isChainInitialized: true });
+    },
+    addEntry: async (entry) => {
+      const current = get().entries;
+      const previousHash = current.length > 0 ? current[0].hash : '0000000000000000000000000000000000000000000000000000000000000000';
+      
+      const newId = `AUD-${String(current.length + 1).padStart(3, '0')}`;
+      const newEntryWithId = {
+        ...entry,
+        id: newId,
+      };
+      
+      const hash = await computeEntryHash(newEntryWithId, previousHash);
+      const hashedEntry: HashedAuditEntry = {
+        ...newEntryWithId,
+        hash,
+        previousHash,
+      };
+      
+      set({
+        entries: [hashedEntry, ...current]
+      });
+    }
+  };
+});
 
 // ── Activity Store ───────────────────────────────────────────────
 interface ActivityStore {

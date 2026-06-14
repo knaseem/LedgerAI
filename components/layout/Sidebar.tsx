@@ -13,6 +13,7 @@ import {
   Zap,
   PieChart,
   Workflow,
+  ShieldCheck,
 } from 'lucide-react';
 
 const navItems = [
@@ -23,6 +24,7 @@ const navItems = [
   { label: 'Financial Close', href: '/dashboard/close', icon: CalendarCheck },
   { label: 'Spend Intelligence', href: '/dashboard/intelligence', icon: PieChart },
   { label: 'Audit Log', href: '/dashboard/audit', icon: ClipboardList },
+  { label: 'Compliance', href: '/dashboard/compliance', icon: ShieldCheck },
   { label: 'Workflow Builder', href: '/dashboard/workflows/new', icon: Workflow },
 ];
 
@@ -75,11 +77,18 @@ export default function Sidebar() {
       {/* Settings */}
       <div className="px-3 pb-4">
         <Link
-          href="#"
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-text-muted hover:text-text-primary hover:bg-surface-hover transition-all duration-200"
+          href="/dashboard/settings"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+            pathname.startsWith('/dashboard/settings')
+              ? 'bg-accent/15 text-accent-hover'
+              : 'text-text-muted hover:text-text-primary hover:bg-surface-hover'
+          }`}
         >
-          <Settings className="w-[18px] h-[18px]" />
+          <Settings className={`w-[18px] h-[18px] ${pathname.startsWith('/dashboard/settings') ? 'text-accent' : ''}`} />
           Settings
+          {pathname.startsWith('/dashboard/settings') && (
+            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent" />
+          )}
         </Link>
       </div>
 

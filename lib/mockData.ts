@@ -1,4 +1,6 @@
 // ── Invoice Types & Data ─────────────────────────────────────────
+import { ApprovalStep, Signature } from './approvalEngine';
+
 export interface Invoice {
   id: string;
   vendor: string;
@@ -12,7 +14,11 @@ export interface Invoice {
   confidence: number;
   lineItems: { description: string; qty: number; unitPrice: number; total: number }[];
   notes?: string;
+  uploaderId?: string;
+  approvalRoute?: ApprovalStep[];
+  signatures?: Signature[];
 }
+
 
 export const invoices: Invoice[] = [
   { id: 'INV-2026-001', vendor: 'Accenture', amount: 84000, currency: 'USD', date: '2026-05-01', dueDate: '2026-06-01', poNumber: 'PO-4410', grnMatch: true, status: 'matched', confidence: 0.98, lineItems: [{ description: 'Consulting Services Q2', qty: 1, unitPrice: 84000, total: 84000 }] },

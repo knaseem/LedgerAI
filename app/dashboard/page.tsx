@@ -27,6 +27,7 @@ import {
 } from 'recharts';
 import { useWorkflowStore } from '@/lib/store';
 import { recentActivity, cashFlowData } from '@/lib/mockData';
+import AgentActivityTicker from '@/components/layout/AgentActivityTicker';
 
 // ── Animated Stat Counter ────────────────────────────────────────
 function StatCounter({
@@ -305,6 +306,9 @@ export default function DashboardPage() {
           delay={0.2}
         />
       </div>
+
+      {/* Live Agent Activity Ticker */}
+      <AgentActivityTicker />
 
       {/* Cash Flow Forecast Chart */}
       <CashFlowChart />
